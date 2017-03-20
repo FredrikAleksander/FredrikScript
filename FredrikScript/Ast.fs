@@ -41,7 +41,6 @@ and Expression =
     | Boolean of bool
     | Char of char
     | String of string
-    | Symbol of string
     | Add of Expression * Expression
     | Subtract of Expression * Expression
     | Multiply of Expression * Expression
@@ -81,6 +80,9 @@ and Expression =
     | BitwiseAndAssignment of Expression * Expression
     | BitwiseXorAssignment of Expression * Expression
     | BitwiseOrAssignment of Expression * Expression
-    | Member of Expression * Expression
+    | Symbol of MemberSegment
+    | Member of Expression * MemberSegment
     | Index of Expression * Expression
-    | Call of string * Expression list
+    | Call of Expression * Expression list
+and MemberSegment = MemberSegment of string * Expression option
+    
