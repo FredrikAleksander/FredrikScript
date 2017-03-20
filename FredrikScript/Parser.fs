@@ -26,6 +26,7 @@ let pKeywordPublic : Parser<string> = pstring "public"
 let pKeywordPrivate : Parser<string> = pstring "private"
 let pKeywordProtected : Parser<string> = pstring "protected"
 let pKeywordInternal : Parser<string> = pstring "internal"
+let pKeywordColon : Parser<string> = pstring ":"
 let pKeywordSemicolon : Parser<string> = pstring ";"
 let pKeywordEquals : Parser<string> = pstring "="
 let pKeywordComma : Parser<string> = pstring ","
@@ -38,6 +39,7 @@ let pKeywordStar : Parser<string> = pstring "*"
 let pKeywordBracketStart : Parser<string> = pstring "["
 let pKeywordBracketEnd : Parser<string> = pstring "]"
 let pKeywordBrackets : Parser<string> = pchar '[' >>. pWhitespace >>. pchar ']' >>% "[]"
+let pKeywordVar : Parser<string> = pstring "var"
 
 let pCharLiteral : Parser<char> =
     let normalChar = satisfy (fun c -> c <> '\\' && c <> '\'' && c <> '\n' && c <> '\r' && c <> '\t')
@@ -62,7 +64,18 @@ let pIdentifier : Parser<string> =
     let pleading = satisfy (fun x -> x = '_' || (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z'))
     let pany     = satisfy (fun x -> x = '_' || (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') || (x >= '0' && x <= '9'))
     let pname    = many1Chars2 pleading pany
-    pname <?> "Name"
+
+    let validate (p : Parser<string>) : Parser<string> =
+        let reservedKeyword = ["return";"var"]
+
+        fun stream ->
+            let reply = p stream
+            if reply.Status = Ok then
+                if List.contains reply.Result reservedKeyword then Reply(ReplyStatus.Error, messageError (sprintf "Keyword is invalid as identifier '%s'" reply.Result))
+                else reply
+            else
+                reply
+    validate pname <?> "Name"
 
 let pIdentifierM : Parser<string> =
     let ptrail   = pKeywordPeriod >>. pIdentifier
@@ -82,16 +95,25 @@ let pTypeName : Parser<TypeName> =
     let pVoid = pKeywordVoid >>. opt (pKeywordStar)
                 |>> fun s ->
                     match s with
-                    | Some _ -> TypeName ("void", Some [Pointer])
-                    | _ -> TypeName ("void", None)
-    let pOther = pIdentifierM .>>. (opt (many (pKeywordBrackets |>> fun _ -> Rank.Array))) |>> TypeName
+                    | Some _ -> TypeName ("void", [Pointer])
+                    | _ -> TypeName ("void", [])
+    let pOther = pIdentifierM .>>. (opt (many (pKeywordBrackets |>> fun _ -> Rank.Array))) |>> fun (i,r) ->
+        match r with
+        | Some ra -> TypeName(i, ra)
+        | _ -> TypeName(i, [])
     pVoid <|> pOther <?> "TypeName"
 
 type private PIndexOrCall = Call of Expression list | Index of Expression
 type private PIndexOrMember = Index of Expression * (MemberSegment list * Expression list option) option | Member of (MemberSegment list * Expression list option)
+type private PVariableDefinitionOrDeclaration = Declaration | Definition of Expression
 
 let pCodeBlock : Parser<Statement list> =
     let ((pExpression : Parser<Expression>), pExpressionImpl) = createParserForwardedToRef()
+    
+    let pScopedExpr : Parser<Expression> =
+        between (pStrWhitespace "(") (pStrWhitespace ")") pExpression .>> pWhitespace
+
+
     do pExpressionImpl :=
         let pNumberExpression : Parser<Expression> =
             let numberFormat =     
@@ -123,7 +145,8 @@ let pCodeBlock : Parser<Statement list> =
         let pCharExpression : Parser<Expression> =
             pCharLiteral .>> pWhitespace |>> Char <?> "Character Literal"
         let pMemberSegment =
-            pIdentifier .>> pWhitespace .>>. opt (between pKeywordBracketStart pKeywordBracketEnd pExpression .>> pWhitespace) |>> MemberSegment
+            pIdentifier .>> pWhitespace .>>. opt (between pKeywordBracketStart pKeywordBracketEnd pExpression .>> pWhitespace) 
+            |>> fun (s,e) -> if (s = "return" || s = "var") then failwith (sprintf "Unsupported symbol '%s'" s) else MemberSegment(s, e)
         let pInvocation : Parser<Expression list> = 
             let pArgs : Parser<Expression list> = Primitives.sepBy pExpression (pKeywordComma .>> pWhitespace)
             pKeywordParensStart >>. pWhitespace >>. pArgs .>> pKeywordParensEnd .>> pWhitespace
@@ -135,8 +158,7 @@ let pCodeBlock : Parser<Statement list> =
                 match vc with
                 | Some args -> Expression.Call (Symbol(identifier), args)
                 | _ ->  Expression.Symbol (identifier))
-        let pScopedExpr : Parser<Expression> =
-            between (pStrWhitespace "(") (pStrWhitespace ")") pExpression .>> pWhitespace
+        
         let leaf : Parser<Expression> =
             pNumberExpression <|> pStringExpression <|> pCharExpression <|> pBooleanExpression <|> pVariableOrCallExpression  <|> pScopedExpr
         
@@ -229,13 +251,31 @@ let pCodeBlock : Parser<Statement list> =
         opp.AddOperator(InfixOperator("|=", pWhitespace, 3, Assoc.Right, fun x y -> BitwiseOrAssignment(x,y)))
         opp.ExpressionParser
     let pStatement =
+        let pVarStatement =
+            let pTypeAnnotation = pKeywordColon >>. pWhitespace >>. pTypeName .>> pWhitespace
+            let pVarLeading = pKeywordVar >>? pWhitespace1 >>. pIdentifier .>> pWhitespace
+            let pVarTrailing = opt pTypeAnnotation .>>. ((pKeywordSemicolon >>. pWhitespace |>> fun _ -> PVariableDefinitionOrDeclaration.Declaration) <|> (pKeywordEquals >>. pWhitespace >>. pExpression .>> pWhitespace .>> pKeywordSemicolon .>> pWhitespace |>> PVariableDefinitionOrDeclaration.Definition))
+
+            pVarLeading .>>. pVarTrailing 
+            |>> fun (i, (t, d)) ->
+                match d with
+                    | Declaration -> VariableDeclaration(i, t, None)
+                    | Definition e -> VariableDeclaration(i, t, Some e)
+
         let pReturnStatement =
+            let pReturnLeading =
+                pKeywordReturn >>? pWhitespace1
+            let pReturnEmptyNoWs = pstring "return;" .>> pWhitespace |>> fun _ -> Return None
             let pReturnExpr = 
-                pExpression .>> pKeywordSemicolon |>> (fun e -> Return (Some e))
+                pExpression .>> pKeywordSemicolon .>> pWhitespace |>> (fun e -> Return (Some e))
             let pReturnEmpty =
                 pKeywordSemicolon .>> pWhitespace >>% (Return None)
-            pKeywordReturn >>. pWhitespace >>. (pReturnEmpty <|> pReturnExpr) .>> pWhitespace
-        pReturnStatement
+            let pReturnM = pReturnLeading >>. (pReturnEmpty <|> pReturnExpr)
+
+            pReturnEmptyNoWs <|> pReturnM
+        let pExprStatement =
+                pExpression .>> pKeywordSemicolon .>> pWhitespace |>> Statement.Expression
+        pReturnStatement <|> pVarStatement <|> pExprStatement
     pKeywordBraceStart >>. pWhitespace >>. manyTill pStatement pKeywordBraceEnd .>> pWhitespace
 
 let pParameter : Parser<Parameter> = pTypeName .>> pWhitespace1 .>>. pName .>> pWhitespace |>> (fun x -> Parameter x)

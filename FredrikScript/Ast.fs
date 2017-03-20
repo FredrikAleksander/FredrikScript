@@ -2,7 +2,7 @@
 
 type Name = Name of string
 type TypeName = 
-    TypeName of string * Rank list option
+    TypeName of string * Rank list
 and Rank = Pointer | Array
 
 type AccessModifier = Internal|Private|Protected|Public
@@ -32,6 +32,8 @@ and InterfaceMember =
 and Parameter =
     | Parameter of TypeName * Name
 and Statement =
+    | Expression of Expression
+    | VariableDeclaration of string * TypeName option * Expression option
     | Return of Expression option
 and Expression =
     | Integer of int32

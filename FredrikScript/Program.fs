@@ -13,8 +13,8 @@ let test p input =
 
 [<EntryPoint>]
 let main argv = 
-    test pCodeBlock "{return x.y.z.ToString(); }"
-//    test pCompilationUnit "using System.Data;using System.Net;class FFF{}namespace System.IO { class ff{ int[] PrintData(object o) {return x(0, \"Hello World!\");}int PrintData2(object o) {return;} int y;} namespace Async{enum DaFgh { SOME_ID = 0, SOME_DATA=1, SOMEOTHER } }}"
+    test pCodeBlock "{var x; var y : int[][] = \"\";  (x+y)*150-10; return (x +y)[0].y.z.ToString(); }"
+    test pCompilationUnit "using System.Data;using System.Net;class FFF{}namespace System.IO { class ff{ int[] PrintData(object o) {return x(0, \"Hello World!\");}int PrintData2(object o) {return;} int y;} namespace Async{enum DaFgh { SOME_ID = 0, SOME_DATA=1, SOMEOTHER } }}"
 //    test pCompilationUnit "using System.Data;using System.Net;class FFF{}namespace System.IO { class ff{ int[] PrintData(object o) {return x(0, \"Hello World!\");}int PrintData2(object o) {return;} int y;} namespace Async{enum DaFgh { SOME_ID = 0, SOME_DATA=1, SOMEOTHER } }}"
 //    test pType "public interface IDisposable{void Dispose();} "
 //    test pType "public enum TEst { DATAID=0,DATAID2,DATAID3=4 }"
