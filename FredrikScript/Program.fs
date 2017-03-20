@@ -13,7 +13,7 @@ let test p input =
 
 [<EntryPoint>]
 let main argv = 
-    test pCodeBlock "{return x == z.i.ToString() ? y : i[0].i.ToString(); return;}"
+    test pCodeBlock "{return x.y.z.ToString(); }"
 //    test pCompilationUnit "using System.Data;using System.Net;class FFF{}namespace System.IO { class ff{ int[] PrintData(object o) {return x(0, \"Hello World!\");}int PrintData2(object o) {return;} int y;} namespace Async{enum DaFgh { SOME_ID = 0, SOME_DATA=1, SOMEOTHER } }}"
 //    test pCompilationUnit "using System.Data;using System.Net;class FFF{}namespace System.IO { class ff{ int[] PrintData(object o) {return x(0, \"Hello World!\");}int PrintData2(object o) {return;} int y;} namespace Async{enum DaFgh { SOME_ID = 0, SOME_DATA=1, SOMEOTHER } }}"
 //    test pType "public interface IDisposable{void Dispose();} "

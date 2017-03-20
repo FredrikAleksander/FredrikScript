@@ -121,23 +121,48 @@ let pCodeBlock : Parser<Statement list> =
             pStringLiteral .>> pWhitespace |>> String <?> "String Literal"
         let pCharExpression : Parser<Expression> =
             pCharLiteral .>> pWhitespace |>> Char <?> "Character Literal"
-        let pVariableOrCallExpression : Parser<Expression> =
+        let pMemberSegment =
+            pIdentifier .>> pWhitespace .>>. opt (between pKeywordBracketStart pKeywordBracketEnd pExpression .>> pWhitespace) |>> MemberSegment
+        let pInvocation : Parser<Expression list> = 
             let pArgs : Parser<Expression list> = Primitives.sepBy pExpression (pKeywordComma .>> pWhitespace)
-            let pCall : Parser<PIndexOrCall> = pKeywordParensStart >>. pWhitespace >>. pArgs .>> pKeywordParensEnd .>> pWhitespace |>> (fun e -> Call e)
+            pKeywordParensStart >>. pWhitespace >>. pArgs .>> pKeywordParensEnd .>> pWhitespace
+        let pVariableOrCallExpression : Parser<Expression> =
+            
+            let pCall : Parser<PIndexOrCall> = pInvocation |>> (fun e -> Call e)
             let pIndex : Parser<PIndexOrCall> = pKeywordBracketStart >>. pWhitespace >>. pExpression .>> pKeywordBracketEnd .>> pWhitespace |>> (fun e -> Index e)
 
-            pIdentifier .>> pWhitespace .>>. (opt (pCall <|> pIndex))
+            pMemberSegment .>>. (opt (pCall <|> pIndex))
             |>> (fun (identifier, vc) ->
                 match vc with
                 | Some callOrIndex -> 
                     match callOrIndex with
-                    | Call args -> Expression.Call (identifier, args)
-                    | Index index -> Expression.Index((Symbol identifier), index)                    
-                | _ ->  Expression.Symbol identifier)
+                    | Call args -> Expression.Call (Symbol(identifier), args)
+                    | Index index -> Expression.Index (Symbol (identifier), index)                    
+                | _ ->  Expression.Symbol (identifier))
         let pScopedExpr : Parser<Expression> =
-            between (pStrWhitespace "(") (pStrWhitespace ")") pExpression
-        let term : Parser<Expression> =
+            between (pStrWhitespace "(") (pStrWhitespace ")") pExpression .>> pWhitespace
+        let leaf : Parser<Expression> =
             pNumberExpression <|> pStringExpression <|> pCharExpression <|> pBooleanExpression <|> pVariableOrCallExpression  <|> pScopedExpr
+        
+        let pMember = 
+            let pLeading = pKeywordPeriod >>. pMemberSegment
+            many1 pLeading
+        let term : Parser<Expression> =
+            leaf .>>. (opt pMember .>>. opt pInvocation)
+            |>> fun (e,(m, i)) -> 
+                match m with
+                | Some s ->
+                    let mi = Member(e, List.head s)
+                    let newList = List.skip 1 s
+                    let mr a b =
+                        Member (a, b)
+                    let mm = List.fold mr mi newList 
+
+                    match i with
+                    | Some x -> Expression.Call(mm, x)
+                    | _ -> mm
+                | _ ->
+                    e
 
         let opp = new OperatorPrecedenceParser<Expression, _, _>()
         opp.TermParser <- term
@@ -150,7 +175,7 @@ let pCodeBlock : Parser<Statement list> =
         opp.AddOperator(PrefixOperator("-", pWhitespace, 15, true, fun x -> UnaryMinus(x)))
         opp.AddOperator(PrefixOperator("!", pWhitespace, 15, true, fun x -> Not(x)))
         opp.AddOperator(PrefixOperator("~", pWhitespace, 15, true, fun x -> BitwiseNot(x)))
-        opp.AddOperator(InfixOperator(".", pWhitespace, 14, Assoc.Left, fun x y -> Member(x,y)))
+        //opp.AddOperator(InfixOperator(".", pWhitespace, 14, Assoc.Left, fun x y -> Member(x,y)))
         opp.AddOperator(InfixOperator("*", pWhitespace, 13, Assoc.Left, fun x y -> Multiply(x,y)))
         opp.AddOperator(InfixOperator("/", pWhitespace, 13, Assoc.Left, fun x y -> Divide(x, y)))
         opp.AddOperator(InfixOperator("%", pWhitespace, 13, Assoc.Left, fun x y -> Modulus(x,y)))
