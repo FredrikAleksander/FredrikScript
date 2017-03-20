@@ -88,6 +88,7 @@ let pTypeName : Parser<TypeName> =
     pVoid <|> pOther <?> "TypeName"
 
 type private PIndexOrCall = Call of Expression list | Index of Expression
+type private PIndexOrMember = Index of Expression * (MemberSegment list * Expression list option) option | Member of (MemberSegment list * Expression list option)
 
 let pCodeBlock : Parser<Statement list> =
     let ((pExpression : Parser<Expression>), pExpressionImpl) = createParserForwardedToRef()
@@ -127,17 +128,12 @@ let pCodeBlock : Parser<Statement list> =
             let pArgs : Parser<Expression list> = Primitives.sepBy pExpression (pKeywordComma .>> pWhitespace)
             pKeywordParensStart >>. pWhitespace >>. pArgs .>> pKeywordParensEnd .>> pWhitespace
         let pVariableOrCallExpression : Parser<Expression> =
-            
-            let pCall : Parser<PIndexOrCall> = pInvocation |>> (fun e -> Call e)
-            let pIndex : Parser<PIndexOrCall> = pKeywordBracketStart >>. pWhitespace >>. pExpression .>> pKeywordBracketEnd .>> pWhitespace |>> (fun e -> Index e)
+            let pCall : Parser<Expression list> = pInvocation
 
-            pMemberSegment .>>. (opt (pCall <|> pIndex))
+            pMemberSegment .>>. opt pCall
             |>> (fun (identifier, vc) ->
                 match vc with
-                | Some callOrIndex -> 
-                    match callOrIndex with
-                    | Call args -> Expression.Call (Symbol(identifier), args)
-                    | Index index -> Expression.Index (Symbol (identifier), index)                    
+                | Some args -> Expression.Call (Symbol(identifier), args)
                 | _ ->  Expression.Symbol (identifier))
         let pScopedExpr : Parser<Expression> =
             between (pStrWhitespace "(") (pStrWhitespace ")") pExpression .>> pWhitespace
@@ -148,19 +144,44 @@ let pCodeBlock : Parser<Statement list> =
             let pLeading = pKeywordPeriod >>. pMemberSegment
             many1 pLeading
         let term : Parser<Expression> =
-            leaf .>>. (opt pMember .>>. opt pInvocation)
-            |>> fun (e,(m, i)) -> 
-                match m with
-                | Some s ->
-                    let mi = Member(e, List.head s)
-                    let newList = List.skip 1 s
-                    let mr a b =
-                        Member (a, b)
-                    let mm = List.fold mr mi newList 
+            let pi = pKeywordBracketStart >>. pWhitespace >>. pExpression .>> pKeywordBracketEnd .>> pWhitespace
+            let px = pMember .>>. opt pInvocation
+            let py = pi .>>. opt px |>> Index
+            let pxx = px |>> Member
 
-                    match i with
-                    | Some x -> Expression.Call(mm, x)
-                    | _ -> mm
+            leaf .>>. opt (pxx <|> py)
+            |>> fun (e,m) -> 
+                match m with
+                | Some im ->
+                    match im with
+                    | Index (ex, m) ->
+                        let idx = Expression.Index (e, ex)
+                        match m with
+                        | Some (ml, el) ->
+                            let mi = Expression.Member(idx, List.head ml)
+                            let newList = List.skip 1 ml
+                            let mr a b =
+                                Expression.Member (a, b)
+                            let mm = List.fold mr mi newList 
+                            match el with
+                            | Some els ->
+                                Expression.Call(mm, els)
+                            | _ -> mm
+                        | _ ->
+                            idx
+
+                    | Member (ml, el) ->
+                        let mi = Expression.Member(e, List.head ml)
+                        let newList = List.skip 1 ml
+                        let mr a b =
+                            Expression.Member (a, b)
+                        let mm = List.fold mr mi newList 
+
+                        match el with
+                            | Some els -> 
+                                Expression.Call(mm, els)
+                            | _ ->
+                                mm
                 | _ ->
                     e
 
