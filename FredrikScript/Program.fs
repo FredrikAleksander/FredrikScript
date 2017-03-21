@@ -13,8 +13,37 @@ let test p input =
 
 [<EntryPoint>]
 let main argv = 
-    test pCodeBlock "{var x; var y : int[][] = \"\";  (x+y)*150-10; return (x +y)[0].y.z.ToString(); }"
-    test pCompilationUnit "using System.Data;using System.Net;class FFF{}namespace System.IO { class ff{ int[] PrintData(object o) {return x(0, \"Hello World!\");}int PrintData2(object o) {return;} int y;} namespace Async{enum DaFgh { SOME_ID = 0, SOME_DATA=1, SOMEOTHER } }}"
+    //test pTypeName "namespace"
+    //test pIdentifier "namespace"
+    //test pExpression "100L"
+    test pTypeName "void*[][][0]"
+    test pCodeBlock """{
+    new int[][0];
+    new FileStream("data.dat");
+    for(var i : int = 0; i < 10; i++) {
+        DoSomething();
+    }
+    if(x > 0) {
+    }
+    else if(y > x) {
+        DoSomething();
+    }
+    else {
+    }
+    while(x > 0) { DoSomething(); }
+    var x : int = y ^= 10 * 10;
+
+    do { DoSomething(); } while(x > 0)
+    do DoSomething(); while(x > 0)
+    foreach(var x in y) {
+        printf("heisann");
+    }
+    }"""
+    test pStatement """while(x > 0) { DoSomething(); }"""
+    test pStatement "blkblf;"
+    test pExpression "truer[0].x[y + false].ToString()"
+    //test pCodeBlock "{var x; var y : int[][] = \"\";  (x+y)*150-10; return (x +y)[0].y.z.ToString(); }"
+    //test pCompilationUnit "using System.Data;using System.Net;class FFF{}namespace System.IO { class ff{ int[] PrintData(object o) {return x(0, \"Hello World!\");}int PrintData2(object o) {return;} int y;} namespace Async{enum DaFgh { SOME_ID = 0, SOME_DATA=1, SOMEOTHER } }}"
 //    test pCompilationUnit "using System.Data;using System.Net;class FFF{}namespace System.IO { class ff{ int[] PrintData(object o) {return x(0, \"Hello World!\");}int PrintData2(object o) {return;} int y;} namespace Async{enum DaFgh { SOME_ID = 0, SOME_DATA=1, SOMEOTHER } }}"
 //    test pType "public interface IDisposable{void Dispose();} "
 //    test pType "public enum TEst { DATAID=0,DATAID2,DATAID3=4 }"

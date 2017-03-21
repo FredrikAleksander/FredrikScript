@@ -30,10 +30,18 @@ and TypeMember =
 and InterfaceMember =
     | Method of TypeName * Name * Parameter list
 and Parameter =
-    | Parameter of TypeName * Name
+    | Parameter of Name * TypeName
 and Statement =
+    | Empty
     | Expression of Expression
     | VariableDeclaration of string * TypeName option * Expression option
+    | For of Statement * Expression * Expression * Statement list
+    | ForEach of Name * Expression * Statement list
+    | If of Expression * Statement list * (Expression * Statement list) list * Statement list option
+    | While of Expression * Statement list
+    | DoWhile of Statement list * Expression
+    | Break
+    | Continue
     | Return of Expression option
 and Expression =
     | Integer of int32
@@ -82,9 +90,10 @@ and Expression =
     | BitwiseAndAssignment of Expression * Expression
     | BitwiseXorAssignment of Expression * Expression
     | BitwiseOrAssignment of Expression * Expression
-    | Symbol of MemberSegment
-    | Member of Expression * MemberSegment
+    | NewArray of TypeName * Expression
+    | NewObject of TypeName * Expression list
+    | Symbol of string
+    | Member of Expression * string
     | Index of Expression * Expression
     | Call of Expression * Expression list
-and MemberSegment = MemberSegment of string * Expression option
-    
+    | Nop
