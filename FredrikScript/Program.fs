@@ -18,7 +18,7 @@ let main argv =
     //test pIdentifier "namespace"
     //test pExpression "100L"
     //test pInheritance ": object"
-    test pType "internal class SeekDirection : IDisposable { Set(x : int, z : float) : int[] {} }"
+    test pCompilationUnit "enum TestClass { SomeId = 0 }"
     test pCompilationUnit "internal enum SeekDirection { Set, Cur, End }"
     test pCodeBlock """{
     new int[][0];
@@ -45,8 +45,6 @@ let main argv =
     test pStatement """while(x > 0) { DoSomething(); }"""
     test pStatement "blkblf;"
     test pExpression "truer[0].x[y + false].ToString()"
-
-    CharParsers.run
 
     printfn "%A" argv
     0 // return an integer exit code

@@ -164,11 +164,12 @@ module Parser =
         | _ -> TypeName(it, ir))
         <?> "typename"
     let pParameter : Parser<Parameter> = 
-        pName .>> spaces .>> pKeywordColon .>> spaces .>>. pTypeName .>> spaces |>> Parameter
+        pName .>>. pContextInfo .>> spaces .>> pKeywordColon .>> spaces .>>. pTypeName .>> spaces 
+        |>> fun ((n,c),t) -> Parameter(c,n,t)
     let pParameters : Parser<Parameter list> = sepBy pParameter (pKeywordComma .>> spaces)
-    let pInvocation : Parser<Expression list> = 
+    let pInvocation : Parser<ContextInfo * Expression list> = 
         let pArgs : Parser<Expression list> = sepBy pExpression (pKeywordComma .>> spaces)
-        pKeywordParensStart >>. spaces >>. pArgs .>> pKeywordParensEnd .>> spaces
+        attempt (pContextInfo .>> pKeywordParensStart .>> spaces .>>. pArgs .>> pKeywordParensEnd .>> spaces)
     let pTypeAnnotation = pKeywordColon >>. spaces >>. pTypeName .>> spaces
     let pMethodSignature : Parser<Parameter list * TypeName> =
         let pMethodParametersStart = pKeywordParensStart >>. spaces
@@ -210,39 +211,39 @@ module Parser =
     ///#region Expressions
     type private PNewObjectOrArray = PObject of Expression list | PArray of Expression
     let pNewExpression =
-        let pLeading = pKeywordNew >>? spaces1 >>. pTypeName .>> spaces
+        let pLeading = pContextInfo .>>? pKeywordNew .>>? spaces1 .>>. pTypeName .>> spaces
         let pArray = pKeywordBracketStart >>. spaces >>. pExpression .>> pKeywordBracketEnd .>> spaces |>> PArray
-        let pObject = pInvocation |>> PObject
+        let pObject = pInvocation |>> (fun (_,r') -> PObject(r'))
         let p = pLeading .>>. (pArray <|> pObject)
-        let validate (p : Parser<TypeName * PNewObjectOrArray>) : Parser<Expression> =
+        let validate (p : Parser<(ContextInfo * TypeName) * PNewObjectOrArray>) : Parser<Expression> =
             (fun stream ->
                 let reply = p stream
                 if(reply.Status = Error) then Reply(reply.Status, reply.Error)
                 else
-                    let ((typename : TypeName), (objectOrArray : PNewObjectOrArray)) = reply.Result
+                    let (((ctx : ContextInfo), (typename : TypeName)), (objectOrArray : PNewObjectOrArray)) = reply.Result
                     let (TypeName (n,r)) = typename
                     match objectOrArray with
                     | PObject exprs ->
                         if (List.isEmpty r) then
-                            Reply(NewObject(typename, exprs))
+                            Reply(NewObject(ctx, typename, exprs))
                         else
                             Reply(Error, messageError "Arrays cannot be constructed as objects")
                     | PArray expr ->
                         let newTypeName = TypeName(n, Array::r)
-                        Reply(NewArray(newTypeName, expr)))
+                        Reply(NewArray(ctx, newTypeName, expr)))
         validate p
     let pScopedExpression : Parser<Expression> =
         between (pstring "(" >>. spaces) (pstring ")" >>. spaces) pExpression .>> spaces
     let pBooleanExpression : Parser<Expression> =
-        (pstring "true" <|> pstring "false") .>>? followedBy pWhitespaceSymbolOrEof .>> spaces
-        |>> fun s ->
+        attempt (pContextInfo .>>. (pstring "true" <|> pstring "false") .>> followedBy pWhitespaceSymbolOrEof .>> spaces)
+        |>> fun (c,s) ->
             match s with 
-            | "true" -> Boolean (true)
-            | _ -> Boolean (false)
+            | "true" -> Boolean (c, true)
+            | _ -> Boolean (c, false)
     let pStringExpression : Parser<Expression> =
-        pStringLiteral .>>? followedBy pWhitespaceSymbolOrEof .>> spaces |>> String <?> "string"
+        attempt (pContextInfo .>>. pStringLiteral .>> followedBy pWhitespaceSymbolOrEof .>> spaces |>> String <?> "string")
     let pCharExpression : Parser<Expression> =
-        pCharLiteral .>>? followedBy pWhitespaceSymbolOrEof .>> spaces |>> Char <?> "character"
+        attempt (pContextInfo .>>. pCharLiteral .>> followedBy pWhitespaceSymbolOrEof .>> spaces |>> Char <?> "character")
     let pNumberExpression : Parser<Expression> =
         let numberFormat =     
                 NumberLiteralOptions.AllowMinusSign
@@ -253,6 +254,7 @@ module Parser =
 
         let validate (p : Parser<(NumberLiteral * char option)>) : Parser<Expression> =
             fun stream ->
+                let ctx = contextInfo stream.Position
                 let reply = attempt p stream
                 if reply.Status = Error then Reply(reply.Status, reply.Error)
                 else
@@ -260,19 +262,19 @@ module Parser =
                     match suffix with
                     | Some 'F' ->
                         if nl.IsInteger then Reply(ReplyStatus.Error, messageError "Expected floating point number")
-                        else Reply(Float (float32 nl.String))
+                        else Reply(Float (ctx, float32 nl.String))
                     | Some 'L' ->
-                        if nl.IsInteger then Reply(Long (int64 nl.String))
+                        if nl.IsInteger then Reply(Long (ctx, int64 nl.String))
                         else Reply(ReplyStatus.Error, messageError "Expected integer number")
                     | _ ->
-                        if nl.IsInteger then Reply(Integer (int32 nl.String))
-                        else Reply(Double (double nl.String))
+                        if nl.IsInteger then Reply(Integer (ctx, int32 nl.String))
+                        else Reply(Double (ctx, double nl.String))
 
         validate (numberLiteral numberFormat "number" .>>. opt (pLongSuffix <|> pFloatSuffix) .>>? followedBy pWhitespaceSymbolOrEof .>> spaces)
         <?> "number"
     let pSymbolExpression =
         let pIdent =
-            let validate (p : Parser<_>) = 
+            let validate (p : Parser<_>) : Parser<_> = 
                 let reservedKeyword = 
                     ["return";"var";"namespace";"struct";"class";
                     "interface";"enum";"using";"static";"extern";
@@ -280,60 +282,62 @@ module Parser =
                     "for";"foreach";"if";"else";"break";"while";
                     "do";"goto";"continue";"in";"out";"ref";"new"]
                 fun stream ->
+                    let ctx = contextInfo stream.Position
                     let reply = (attempt p) stream
                     if reply.Status = Ok then
-                        if List.contains reply.Result reservedKeyword then Reply(ReplyStatus.Error, messageError (sprintf "Keyword '%s' is not valid as an identifier" reply.Result))
-                        else reply
+                        let res = reply.Result
+                        if List.contains res reservedKeyword then Reply(ReplyStatus.Error, messageError (sprintf "Keyword '%s' is not valid as an identifier" reply.Result))
+                        else Reply((ctx, reply.Result))
                     else
-                        reply
+                        Reply((ctx, reply.Result))
     
             let pleading = satisfy (fun x -> x = '_' || (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z'))
             let pany     = satisfy (fun x -> x = '_' || (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') || (x >= '0' && x <= '9'))
             let pname'    = many1Chars2 pleading pany
             let pname = validate pname' .>>? followedBy pWhitespaceSymbolOrEof .>> spaces
-            pname |>> (fun s -> Expression.Symbol s) <?> "symbol"
+            pname |>> (fun (c,s) -> Expression.Symbol(c,s)) <?> "symbol"
         pIdent
     let chainIndexExpressions expr indices =
-        let head = Index(expr, List.head indices)
+        let (hc,hi) = List.head indices
+        let head = Index(hc, expr, hi)
         let newList = List.skip 1 indices
-        let folder state index = 
-            Index(state, index)
+        let folder state (ctx', index) = 
+            Index(ctx', state, index)
         List.fold folder head newList
-    type private PIndexOrInvocation = PIndex of Expression list | PInvocation of Expression list
+    type private PIndexOrInvocation = PIndex of (ContextInfo * Expression) list | PInvocation of ContextInfo * Expression list
     let pLeafExpression =
         let pExtendedExpression =
-            let pIndex = many1 (between pKeywordBracketStart pKeywordBracketEnd (spaces >>. pExpression .>> spaces)) |>> PIndex
+            let pIndex = many1 (between pKeywordBracketStart pKeywordBracketEnd (spaces >>. pContextInfo .>>. pExpression .>> spaces)) |>> PIndex
             let pInvoke = pInvocation |>> PInvocation
 
-            pSymbolExpression .>> spaces .>>. opt ((pIndex <|> pInvoke) .>> spaces)
-            |>> fun (sym, indexOrInvokeS) ->
+            attempt (pContextInfo .>>. pSymbolExpression .>> spaces .>>. opt ((pIndex <|> pInvoke) .>> spaces))
+            |>> fun ((ctx, sym), indexOrInvokeS) ->
                 match indexOrInvokeS with
                 | Some (PIndex indices) ->
                     chainIndexExpressions sym indices
-                | Some (PInvocation args) ->
-                    Expression.Call(sym, args)
+                | Some (PInvocation (ctx,args)) ->
+                    Expression.Call(ctx, sym, args)
                 | _ -> sym
         let pMemberSegment =
-            pIdentifier .>> spaces .>>. opt (between pKeywordBracketStart pKeywordBracketEnd (spaces >>. pExpression .>> spaces) .>> spaces) 
+            attempt (pContextInfo .>>. pIdentifier .>> spaces .>>. opt (between pKeywordBracketStart pKeywordBracketEnd (spaces >>. pContextInfo .>>. pExpression .>> spaces) .>> spaces) )
         let pMember = 
             let pLeading = pKeywordPeriod >>. spaces >>. pMemberSegment
             many1 pLeading .>> spaces .>>. opt (pInvocation .>> spaces)
         let pLeaf =
-            let pm instance (membr,index) =
-                let m = Expression.Member(instance, membr)
+            let pm instance ((ctx,membr), index) =
+                let m = Expression.Member(ctx, instance, membr)
                 match index with
-                | Some i -> Expression.Index(m, i)
+                | Some (c,i) -> Expression.Index(c, m, i)
                 | _ -> m
-            (pScopedExpression <|> pBooleanExpression <|> pStringExpression <|> pCharExpression <|> pNumberExpression <|> pNewExpression <|> pExtendedExpression) .>>. opt pMember
-            |>> fun (expr, (membrS)) ->
+            pContextInfo .>>. (pScopedExpression <|> pBooleanExpression <|> pStringExpression <|> pCharExpression <|> pNumberExpression <|> pNewExpression <|> pExtendedExpression) .>>. opt pMember
+            |>> fun ((c,expr), (membrS)) ->
                 match membrS with
                 | Some (membr, invocationS) ->
                     let head =  pm expr (List.head membr)
                     let newList = List.skip 1 membr
                     let mm = List.fold pm head newList
-
                     match invocationS with
-                    | Some invocation -> Expression.Call(mm, invocation)
+                    | Some (c, invocation) -> Expression.Call(c, mm, invocation)
                     | _ -> mm
                 | _ -> expr
             
@@ -341,104 +345,110 @@ module Parser =
     ///#endregion Expressions
     ///#region Operators
     type Assoc = Associativity
-    let opp = new OperatorPrecedenceParser<Expression, _, _>()        
-    opp.AddOperator(PostfixOperator("++", spaces, 16, true, fun x -> PostfixIncrement(x)))
-    opp.AddOperator(PostfixOperator("--", spaces, 16, true, fun x -> PostfixDecrement(x)))
-    opp.AddOperator(PrefixOperator("++", spaces, 15, true, fun x -> PrefixIncrement(x)))
-    opp.AddOperator(PrefixOperator("--", spaces, 15, true, fun x -> PrefixDecrement(x)))
-    opp.AddOperator(PrefixOperator("+", spaces, 15, true, fun x -> UnaryPlus(x)))
-    opp.AddOperator(PrefixOperator("-", spaces, 15, true, fun x -> UnaryMinus(x)))
-    opp.AddOperator(PrefixOperator("!", spaces, 15, true, fun x -> Not(x)))
-    opp.AddOperator(PrefixOperator("~", spaces, 15, true, fun x -> BitwiseNot(x)))
-    opp.AddOperator(InfixOperator("*", spaces, 13, Assoc.Left, fun x y -> Multiply(x,y)))
-    opp.AddOperator(InfixOperator("/", spaces, 13, Assoc.Left, fun x y -> Divide(x, y)))
-    opp.AddOperator(InfixOperator("%", spaces, 13, Assoc.Left, fun x y -> Modulus(x,y)))
-    opp.AddOperator(InfixOperator("+", spaces, 12, Assoc.Left, fun x y -> Add(x,y)))
-    opp.AddOperator(InfixOperator("-", spaces, 12, Assoc.Left, fun x y -> Subtract(x,y)))
-    opp.AddOperator(InfixOperator("<<", spaces, 11, Assoc.Left, fun x y -> BitshiftLeft(x,y)))
-    opp.AddOperator(InfixOperator(">>", spaces, 11, Assoc.Left, fun x y -> BitshiftRight(x,y)))
-    opp.AddOperator(InfixOperator("<", spaces, 10, Assoc.Left, fun x y -> LowerThan(x,y)))
-    opp.AddOperator(InfixOperator("<=", spaces, 10, Assoc.Left, fun x y -> LowerThanEquals(x,y)))
-    opp.AddOperator(InfixOperator(">", spaces, 10, Assoc.Left, fun x y -> GreaterThan(x,y)))
-    opp.AddOperator(InfixOperator(">=", spaces, 10, Assoc.Left, fun x y -> GreaterThanEquals(x,y)))
-    opp.AddOperator(InfixOperator("==", spaces, 9, Assoc.Left, fun x y -> Equals(x, y)))
-    opp.AddOperator(InfixOperator("!=", spaces, 9, Assoc.Left, fun x y -> NotEqual(x,y)))
-    opp.AddOperator(InfixOperator("&", spaces, 8, Assoc.Left, fun x y -> BitwiseAnd(x,y)))
-    opp.AddOperator(InfixOperator("^", spaces, 7, Assoc.Left, fun x y -> BitwiseXor(x,y)))
-    opp.AddOperator(InfixOperator("|", spaces, 6, Assoc.Left, fun x y -> BitwiseOr(x,y)))
-    opp.AddOperator(InfixOperator("&&", spaces, 5, Assoc.Left, fun x y -> And(x,y)))
-    opp.AddOperator(InfixOperator("||", spaces, 4, Assoc.Left, fun x y -> Or(x,y)))
-    opp.AddOperator(TernaryOperator("?", spaces, ":", spaces, 3, Assoc.Right, fun x y z -> Ternary(x, y, z)))
-    opp.AddOperator(InfixOperator("=", spaces, 3, Assoc.Right, fun x y -> Assignment(x,y)))
-    opp.AddOperator(InfixOperator("+=", spaces, 3, Assoc.Right, fun x y -> AddAssignment(x,y)))
-    opp.AddOperator(InfixOperator("-=", spaces, 3, Assoc.Right, fun x y -> SubtractAssignment(x,y)))
-    opp.AddOperator(InfixOperator("*=", spaces, 3, Assoc.Right, fun x y -> MultiplyAssignment(x,y)))
-    opp.AddOperator(InfixOperator("/=", spaces, 3, Assoc.Right, fun x y -> DivideAssignment(x,y)))
-    opp.AddOperator(InfixOperator("%=", spaces, 3, Assoc.Right, fun x y -> ModulusAssignment(x,y)))
-    opp.AddOperator(InfixOperator("<<=", spaces, 3, Assoc.Right, fun x y -> BitshiftLeftAssignment(x,y)))
-    opp.AddOperator(InfixOperator(">>=", spaces, 3, Assoc.Right, fun x y -> BitshiftRightAssignment(x,y)))
-    opp.AddOperator(InfixOperator("&=", spaces, 3, Assoc.Right, fun x y -> BitwiseAndAssignment(x,y)))
-    opp.AddOperator(InfixOperator("^=", spaces, 3, Assoc.Right, fun x y -> BitwiseXorAssignment(x,y)))
-    opp.AddOperator(InfixOperator("|=", spaces, 3, Assoc.Right, fun x y -> BitwiseOrAssignment(x,y)))
+    let opp = new OperatorPrecedenceParser<Expression, ContextInfo, _>()       
+    let adjustPosition offset (pos: Position) =
+        Position(pos.StreamName, pos.Index + int64 offset,
+             pos.Line, pos.Column + int64 offset)
+
+    let pContextWs = pContextInfo .>> spaces
+
+    opp.AddOperator(PostfixOperator("++", pContextWs, 16, true,(), fun c x -> PostfixIncrement(c,x)))
+    opp.AddOperator(PostfixOperator("--", pContextWs, 16, true,(), fun c x -> PostfixDecrement(c,x)))
+    opp.AddOperator(PrefixOperator("++", pContextWs, 15, true,(), fun c x -> PrefixIncrement(c,x)))
+    opp.AddOperator(PrefixOperator("--", pContextWs, 15, true,(), fun c x -> PrefixDecrement(c,x)))
+    opp.AddOperator(PrefixOperator("+", pContextWs, 15, true, (), fun c x -> UnaryPlus(c,x)))
+    opp.AddOperator(PrefixOperator("-", pContextWs, 15, true, (), fun c x -> UnaryMinus(c,x)))
+    opp.AddOperator(PrefixOperator("!", pContextWs, 15, true, (), fun c x -> Not(c,x)))
+    opp.AddOperator(PrefixOperator("~", pContextWs, 15, true, (), fun c x -> BitwiseNot(c,x)))
+    opp.AddOperator(InfixOperator("*", pContextWs, 13, Assoc.Left, (), fun c x y -> Multiply(c,x,y)))
+    opp.AddOperator(InfixOperator("/", pContextWs, 13, Assoc.Left, (), fun c x y -> Divide(c,x,y)))
+    opp.AddOperator(InfixOperator("%", pContextWs, 13, Assoc.Left, (), fun c x y -> Modulus(c,x,y)))
+    opp.AddOperator(InfixOperator("+", pContextWs, 12, Assoc.Left, (), fun c x y -> Add(c,x,y)))
+    opp.AddOperator(InfixOperator("-", pContextWs, 12, Assoc.Left, (), fun c x y -> Subtract(c,x,y)))
+    opp.AddOperator(InfixOperator("<<", pContextWs, 11, Assoc.Left,(), fun c x y -> BitshiftLeft(c, x,y)))
+    opp.AddOperator(InfixOperator(">>", pContextWs, 11, Assoc.Left,(), fun c x y -> BitshiftRight(c, x,y)))
+    opp.AddOperator(InfixOperator("<", pContextWs, 10, Assoc.Left, (), fun c x y -> LowerThan(c,x,y)))
+    opp.AddOperator(InfixOperator("<=", pContextWs, 10, Assoc.Left,(), fun c x y -> LowerThanEquals(c, x,y)))
+    opp.AddOperator(InfixOperator(">", pContextWs, 10, Assoc.Left, (), fun c x y -> GreaterThan(c, x,y)))
+    opp.AddOperator(InfixOperator(">=", pContextWs, 10, Assoc.Left,(), fun c x y -> GreaterThanEquals(c,x,y)))
+    opp.AddOperator(InfixOperator("==", pContextWs, 9, Assoc.Left, (), fun c x y -> Equals(c,x, y)))
+    opp.AddOperator(InfixOperator("!=", pContextWs, 9, Assoc.Left, (), fun c x y -> NotEqual(c, x,y)))
+    opp.AddOperator(InfixOperator("&", pContextWs, 8, Assoc.Left,  (), fun c x y -> BitwiseAnd(c, x,y)))
+    opp.AddOperator(InfixOperator("^", pContextWs, 7, Assoc.Left,  (), fun c x y -> BitwiseXor(c, x,y)))
+    opp.AddOperator(InfixOperator("|", pContextWs, 6, Assoc.Left,  (), fun c x y -> BitwiseOr(c,x,y)))
+    opp.AddOperator(InfixOperator("&&", pContextWs, 5, Assoc.Left, (), fun c x y -> And(c,x,y)))
+    opp.AddOperator(InfixOperator("||", pContextWs, 4, Assoc.Left, (), fun c x y -> Or(c,x,y)))
+    opp.AddOperator(TernaryOperator("?", pContextWs, ":", pContextWs, 3, Assoc.Right, (), fun c1 c2 x y z -> Ternary(c1, x, y, z)))
+    opp.AddOperator(InfixOperator("=", pContextWs, 3, Assoc.Right, (),  fun c x y -> Assignment(c, x,y)))
+    opp.AddOperator(InfixOperator("+=", pContextWs, 3, Assoc.Right,(),  fun c x y -> AddAssignment(c,x,y)))
+    opp.AddOperator(InfixOperator("-=", pContextWs, 3, Assoc.Right,(),  fun c x y -> SubtractAssignment(c,x,y)))
+    opp.AddOperator(InfixOperator("*=", pContextWs, 3, Assoc.Right,(),  fun c x y -> MultiplyAssignment(c,x,y)))
+    opp.AddOperator(InfixOperator("/=", pContextWs, 3, Assoc.Right,(),  fun c x y -> DivideAssignment(c,x,y)))
+    opp.AddOperator(InfixOperator("%=", pContextWs, 3, Assoc.Right,(),  fun c x y -> ModulusAssignment(c,x,y)))
+    opp.AddOperator(InfixOperator("<<=", pContextWs, 3, Assoc.Right,(), fun c x y -> BitshiftLeftAssignment(c,x,y)))
+    opp.AddOperator(InfixOperator(">>=", pContextWs, 3, Assoc.Right,(), fun c x y -> BitshiftRightAssignment(c,x,y)))
+    opp.AddOperator(InfixOperator("&=", pContextWs, 3, Assoc.Right, (), fun c x y -> BitwiseAndAssignment(c,x,y)))
+    opp.AddOperator(InfixOperator("^=", pContextWs, 3, Assoc.Right, (), fun c x y -> BitwiseXorAssignment(c,x,y)))
+    opp.AddOperator(InfixOperator("|=", pContextWs, 3, Assoc.Right, (), fun c x y -> BitwiseOrAssignment(c,x,y)))
     opp.TermParser <- pLeafExpression
     do pExpressionImpl := opp.ExpressionParser
     ///#endregion Operators
     ///#region Statements
     let pBreakStatement =
-        pKeywordBreak >>. followedBy pWhitespaceSymbolOrEof >>. spaces >>% Break
+        pKeywordBreak >>. followedBy pWhitespaceSymbolOrEof >>. pContextInfo .>> spaces |>> Break
         <?> "break statement"
     let pContinueStatement =
-        pKeywordContinue >>. followedBy pWhitespaceSymbolOrEof >>. spaces >>% Continue
+        pKeywordContinue >>. followedBy pWhitespaceSymbolOrEof >>. pContextInfo .>> spaces |>> Continue
         <?> "continue statement"
     let pVarStatement =
-        let pVarLeading = pKeywordVar >>? spaces1 >>. pIdentifier .>> spaces
+        let pVarLeading = pKeywordVar >>? spaces1 >>. pIdentifier .>>. pContextInfo .>> spaces
         let pVarTrailing = opt pTypeAnnotation .>>. opt (pKeywordEquals >>. spaces >>. pExpression .>> followedBy pWhitespaceSymbolOrEof)
 
         pVarLeading .>>. pVarTrailing 
-        |>> (fun (i, (t, d)) ->
+        |>> (fun ((i,c), (t, d)) ->
             match d with
-                | Some e -> VariableDeclaration(i, t, Some e)
-                | _ -> VariableDeclaration(i, t, None))
+                | Some e -> VariableDeclaration(c, i, t, Some e)
+                | _ -> VariableDeclaration(c, i, t, None))
         <?> "var statement"
     let pReturnStatement =
-        pKeywordReturn >>. (opt (spaces1 >>? pExpression) <|> (followedBy pWhitespaceSymbolOrEof >>. spaces >>% None))
+        attempt (pKeywordReturn >>. pContextInfo .>>. (opt (spaces1 >>? pExpression) <|> (followedBy pWhitespaceSymbolOrEof >>. spaces >>% None)))
         |>> Return <?> "return statement"
     let pWhileStatement =
-        pKeywordWhile >>. spaces >>. pKeywordParensStart >>. spaces >>. pExpression .>> pKeywordParensEnd .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
-        |>> While <?> "while statement"
+        pKeywordWhile >>. pContextInfo .>> spaces .>> pKeywordParensStart .>> spaces .>>. pExpression .>> pKeywordParensEnd .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
+        |>> (fun ((c, e), s) -> While(c, e, s)) <?> "while statement"
     let pDoWhileStatement =
-        pKeywordDo >>. spaces >>. (pCodeBlock <|> (pStatement |>> fun s -> [s])) .>> pKeywordWhile .>> spaces .>> pKeywordParensStart .>> spaces .>>. pExpression .>> pKeywordParensEnd .>> spaces
-        |>> DoWhile <?> "do statement"
-    let pEmptyStatement : Parser<Statement> = pstring ";" >>. spaces >>% Empty
+        pKeywordDo >>. pContextInfo .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s])) .>> pKeywordWhile .>> spaces .>> pKeywordParensStart .>> spaces .>>. pExpression .>> pKeywordParensEnd .>> spaces
+        |>> (fun ((c,s),e) -> DoWhile (c,s,e)) <?> "do statement"
+    let pEmptyStatement : Parser<Statement> = attempt (pContextInfo .>> pstring ";") .>> spaces |>> Empty
     let pForEachStatement =
-        pKeywordForEach >>. spaces >>. pKeywordParensStart >>. spaces >>. pKeywordVar >>. spaces1 >>. pName .>> spaces1 .>> pKeywordIn .>> spaces1 .>>. pExpression .>>
+        pKeywordForEach >>. pContextInfo .>> spaces .>> pKeywordParensStart .>> spaces .>> pKeywordVar .>> spaces1 .>>. pName .>> spaces1 .>> pKeywordIn .>> spaces1 .>>. pExpression .>>
         pKeywordParensEnd .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
-        |>> (fun (((name), expr), statements) -> ForEach (name, expr, statements))
+        |>> (fun (((c, name), expr), statements) -> ForEach (c, name, expr, statements))
         <?> "foreach statement"
     let pExpressionStatement =
-        pExpression |>> Statement.Expression
+        attempt (pContextInfo .>>. pExpression |>> Statement.Expression)
         <?> "expression statement"
     let pForStatement =
         let pInitStatement = opt (pVarStatement <|> pExpressionStatement) .>> pKeywordSemicolon .>> spaces
         let pExpr = opt pExpression
-        pKeywordFor >>. spaces >>. pKeywordParensStart >>. spaces >>. pInitStatement .>>. pExpr .>> pKeywordSemicolon .>> spaces .>>. pExpr .>> pKeywordParensEnd .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
-        |>> (fun (((initStatement, conditionStatement), afterStatement), statements) ->
+        pKeywordFor >>. pContextInfo .>> spaces .>> pKeywordParensStart .>> spaces .>>. pInitStatement .>>. pExpr .>> pKeywordSemicolon .>> spaces .>>. pExpr .>> pKeywordParensEnd .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
+        |>> (fun ((((ctx,initStatement), conditionStatement), afterStatement), statements) ->
             let is = match initStatement with
                      | Some is' -> is'
-                     | _ -> Empty
+                     | _ -> Empty ctx
             let cs = match conditionStatement with
                      | Some cs' -> cs'
-                     | _ -> Nop
+                     | _ -> Nop(ctx)
             let afs = match afterStatement with
                       | Some afs' -> afs'
-                      | None -> Nop
-            For(is, cs, afs, statements))
+                      | None -> Nop(ctx)
+            For(ctx, is, cs, afs, statements))
         <?> "for statement"
     let pIfStatement =
-        let pElseIfStatement = pKeywordElseIf >>. spaces >>. pKeywordParensStart >>. spaces >>. pExpression .>> pKeywordParensEnd .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
-        let pElseStatement = pKeywordElse >>. spaces >>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
-        let pIfStatement' = pKeywordIf >>. spaces >>. pKeywordParensStart >>. spaces >>. pExpression .>> pKeywordParensEnd .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
-        pIfStatement' .>>. many pElseIfStatement .>>. opt pElseStatement |>> (fun (((ifExpression, ifStatement), elseIfStatementsM), elseStatementS) -> If (ifExpression, ifStatement, elseIfStatementsM, elseStatementS)) <?> "if statement"
+        let pElseIfStatement = pKeywordElseIf >>. spaces >>. pContextInfo .>> pKeywordParensStart .>> spaces .>>. pExpression .>> pKeywordParensEnd .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s])) |>> fun ((a,b),c) -> (a,b,c)
+        let pElseStatement = pKeywordElse >>. spaces >>. pContextInfo .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
+        let pIfStatement' = pKeywordIf >>. spaces >>. pContextInfo .>> pKeywordParensStart .>> spaces .>>. pExpression .>> pKeywordParensEnd .>> spaces .>>. (pCodeBlock <|> (pStatement |>> fun s -> [s]))
+        pIfStatement' .>>. many pElseIfStatement .>>. opt pElseStatement |>> (fun ((((ctx, ifExpression), ifStatement), elseIfStatementsM), elseStatementS) -> If (ctx, ifExpression, ifStatement, elseIfStatementsM, elseStatementS)) <?> "if statement"
     do pStatementImpl :=
         let needTerminator = 
             pVarStatement <|> pReturnStatement <|> pBreakStatement <|> pContinueStatement  <|> pExpressionStatement
@@ -493,7 +503,7 @@ module Parser =
     let private pEnum = 
         let pa = pAccessModifier [pKeywordInternal;pKeywordPrivate;pKeywordPublic]
         let pEnumValue = pKeywordEquals >>. spaces >>. pint32
-        let pEnumMember = pName .>> spaces .>>. opt pEnumValue .>> spaces |>> EnumValue
+        let pEnumMember = pName .>>. pContextInfo .>> spaces .>>. opt pEnumValue .>> spaces |>> fun ((n, c),v) -> EnumValue(c,n,v)
         let pTrailing = pKeywordComma >>. spaces >>. pEnumMember
         let pEnumMembers = pEnumMember .>>. manyTill pTrailing pKeywordBraceEnd |>> (fun (x,y) -> x::y)
         let pMap ((x, c), y) =
@@ -502,8 +512,8 @@ module Parser =
         |>> pMap <?> "enum"
     let private pInterface =
         let pInterfaceMethod: Parser<InterfaceMember> =
-            let p = pName .>> spaces .>>. pMethodSignature .>> pKeywordSemicolon .>> spaces |>> (fun (x,(y,z)) ->
-                Method (x, y, z))
+            let p = pName .>>. pContextInfo.>> spaces .>>. pMethodSignature .>> pKeywordSemicolon .>> spaces |>> (fun ((x,c),(y,z)) ->
+                Method (c, x, y, z))
             p <?> "method"
         let pMethods : Parser<InterfaceMember list> = 
             manyTill pInterfaceMethod pKeywordBraceEnd
@@ -548,14 +558,14 @@ module Parser =
         let p = pa .>>. (pConstructor <|> pFieldOrMethod)
         p |>> (fun (modifier, x) ->
             match x with
-            | Constructor (ctx, parameters, statements) -> Ast.Constructor(modifier,parameters,statements)
+            | Constructor (ctx, parameters, statements) -> Ast.Constructor(ctx, modifier,parameters,statements)
             | FieldOrMethod(storage, ctx, n,d) -> 
                 match d with
-                | Field t -> Ast.Field(modifier, storage, t, n)
+                | Field t -> Ast.Field(ctx, modifier, storage, t, n)
                 | Method (parameters, t, mt) ->
                     match mt with
-                    | Definition -> TypeMember.MethodDefinition(modifier, storage, n, parameters, t)
-                    | Declaration stmts -> TypeMember.Method (modifier, storage, n, parameters, t, stmts))
+                    | Definition -> TypeMember.MethodDefinition(ctx, modifier, storage, n, parameters, t)
+                    | Declaration stmts -> TypeMember.Method (ctx, modifier, storage, n, parameters, t, stmts))
     let private pStruct : Parser<PTypeDeclaration> =
             let pBody = 
                 pKeywordBraceStart >>. spaces >>. many pTypeMember .>> spaces.>> pKeywordBraceEnd .>> spaces
@@ -583,16 +593,18 @@ module Parser =
     ///#region Compilation Unit
     let pUsingDirectives : Parser<UsingDirective list> =
         let pUsingDirective = 
-            pKeywordUsing >>. spaces1 >>. pNameM .>> spaces .>> pKeywordSemicolon .>> spaces |>> (fun (Name x) -> UsingDirective (x))
+            pKeywordUsing >>. spaces1 >>. pContextInfo .>>. pNameM .>> spaces .>> pKeywordSemicolon .>> spaces |>> (fun (c, (Name x)) -> UsingDirective (c, x))
         spaces >>. many pUsingDirective .>> spaces
 
     let pTopLevelDeclarations : Parser<TopLevelDeclaration list> =    
         let (pTopLevelDeclaration : Parser<TopLevelDeclaration>), pTopLevelDeclarationImpl = createParserForwardedToRef()
         do pTopLevelDeclarationImpl :=
-            let pNamespace : Parser<Name * TopLevelDeclaration list> =
-                pKeywordNamespace >>. spaces1 >>. pNameM .>> spaces .>> pKeywordBraceStart .>> spaces
-                .>>. many pTopLevelDeclaration .>> spaces .>> pKeywordBraceEnd .>> spaces
-            List.reduce (<|>) [pType |>> Type; pNamespace |>> Namespace]  
+            let pm n c s =
+                 Namespace (c,n,s)
+            let pNamespace : Parser<TopLevelDeclaration> =
+                pKeywordNamespace >>. spaces1 >>. pNameM .>>. pContextInfo .>> spaces .>> pKeywordBraceStart .>> spaces .>>. many pTopLevelDeclaration .>> spaces .>> pKeywordBraceEnd .>> spaces
+                |>> (fun ((n,c),s) -> Namespace (c,n,s))
+            List.reduce (<|>) [pNamespace;(pContextInfo .>>. pType) |>> Type]  
         spaces >>. many pTopLevelDeclaration .>> spaces
 
     let pCompilationUnit : Parser<CompilationUnit> =
