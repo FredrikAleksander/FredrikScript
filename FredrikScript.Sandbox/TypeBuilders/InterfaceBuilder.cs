@@ -11,7 +11,7 @@ namespace FredrikScript.Sandbox.TypeBuilders
         private readonly LLVMTypeRef _structTypeValue;
         private readonly LLVMTypeRef _typeValue;
 
-        public InterfaceBuilder(CompilerContext context, string ns, string name)
+        public InterfaceBuilder(CompilerContext context, string ns, string name) : base(ns, name)
         {
             _name = name ?? throw new ArgumentNullException(nameof(name));
             _namespace = ns ?? "";
@@ -19,9 +19,6 @@ namespace FredrikScript.Sandbox.TypeBuilders
             _structTypeValue = LLVM.StructCreateNamed(context.LLVMContext, string.IsNullOrWhiteSpace(ns) ? name : ns + "." + name);
             _typeValue = LLVM.PointerType(_structTypeValue, 0);
         }
-
-        public override string Namespace => _namespace;
-        public override string Name => _name;
 
         public override TypeKind Kind => TypeKind.Interface;
 

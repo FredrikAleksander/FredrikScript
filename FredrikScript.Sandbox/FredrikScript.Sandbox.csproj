@@ -121,6 +121,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+    <None Include="Io.fscript" />
     <None Include="Main.fscript" />
     <None Include="packages.config" />
   </ItemGroup>

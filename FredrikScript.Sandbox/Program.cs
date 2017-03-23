@@ -18,6 +18,8 @@ namespace FredrikScript.Sandbox
         static void Main(string[] files)
         {
             var parsed = ParseFiles(files);
+            foreach (var i in parsed) Ast.printAst(i);
+            Console.WriteLine(parsed);
             var llvmCompiler = new CompilerContext();
             var visitorPass1 = new TypeVisitorPass1(llvmCompiler);
             var visitorPass2 = new TypeVisitorPass2(llvmCompiler);

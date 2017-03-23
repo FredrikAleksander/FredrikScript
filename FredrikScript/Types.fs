@@ -13,7 +13,7 @@ module Ast =
         member this.Column = column
 
         override this.ToString () =
-            sprintf "%s (TID %i): Line %i, Column %i" this.StreamName this.Index this.Line this.Column
+            sprintf "%s: Line %i, Column %i" this.StreamName this.Line this.Column
 
     type Name = Name of string
     type TypeName = 
@@ -112,3 +112,6 @@ module Ast =
         | Index of ContextInfo * Expression * Expression
         | Call of ContextInfo * Expression * Expression list
         | Nop of ContextInfo
+
+    let printAst (ast : CompilationUnit) =
+        printf "%A" ast

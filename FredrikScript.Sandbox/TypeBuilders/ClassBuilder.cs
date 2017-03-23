@@ -11,7 +11,7 @@ namespace FredrikScript.Sandbox.TypeBuilders
         private readonly LLVMTypeRef _structTypeValue;
         private readonly LLVMTypeRef _typeValue;
 
-        public ClassBuilder(CompilerContext context,  string ns, string name)
+        public ClassBuilder(CompilerContext context,  string ns, string name) : base(ns, name)
         {
             _name = name ?? throw new ArgumentNullException(nameof(name));
             _namespace = ns ?? "";

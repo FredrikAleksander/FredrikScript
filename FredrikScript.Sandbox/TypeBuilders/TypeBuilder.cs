@@ -11,8 +11,8 @@ namespace FredrikScript.Sandbox.TypeBuilders
 
         public TypeBuilder(string ns, string name)
         {
-            _namespace = ns;
-            _name = name;
+            _namespace = ns ?? "";
+            _name = name ?? throw new ArgumentNullException(nameof(name));
             if (string.IsNullOrWhiteSpace(ns))
                 _fqn = name;
             else

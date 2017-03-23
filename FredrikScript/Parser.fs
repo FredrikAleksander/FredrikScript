@@ -126,6 +126,11 @@ module Parser =
     let pNameM : Parser<Name> =
         pIdentifierM |>> Name <?> "name"
 
+    let pWhitespaceSymbolOrEof : Parser<unit> = 
+        (satisfy (fun x -> 
+            System.Char.IsWhiteSpace(x) || (System.Char.IsDigit(x) || System.Char.IsLetter(x)) = false
+        ) >>% ()) <|> eof
+
     let pTypeName : Parser<TypeName> =
         let validate (p : Parser<_>) = 
             let reservedKeyword = 
@@ -180,8 +185,8 @@ module Parser =
             | Some tn -> (parameters, tn)
             | _ -> (parameters, TypeName("void", []))
     let pStorageClass : Parser<StorageClass> =
-        let pExtern = pKeywordExtern >>? spaces1 >>. pStringLiteral .>> spaces1 |>> (fun d -> Extern d)
-        let pStatic = pKeywordStatic >>? spaces1 |>> (fun _ -> Static)
+        let pExtern = pKeywordExtern >>. spaces1 >>. pStringLiteral .>> spaces1 |>> (fun d -> Extern d)
+        let pStatic = pKeywordStatic >>. followedBy pWhitespaceSymbolOrEof |>> (fun _ -> Static)
 
         let p = opt (pStatic <|> pExtern)
             |>> function
@@ -200,11 +205,6 @@ module Parser =
             match x with
             | Some r -> r
             | _ -> Private) <?> "access modifier"
-    let pWhitespaceSymbolOrEof : Parser<unit> = 
-        (satisfy (fun x -> 
-            System.Char.IsWhiteSpace(x) || (System.Char.IsDigit(x) || System.Char.IsLetter(x)) = false
-        ) >>% ()) <|> eof
-
     let pCodeBlock : Parser<Statement list> =
         pKeywordBraceStart >>. spaces >>. manyTill pStatement pKeywordBraceEnd .>> spaces
     ///#endregion Helpers
@@ -536,7 +536,7 @@ module Parser =
             |>> (fun ((ctx, parameters), statements) ->
                 PMember.Constructor(ctx, parameters, statements)) <?> "constructor"
         let pFieldOrMethod : Parser<PMember> =
-            let pLeading = opt (pStorageClass .>>? spaces1) .>>.? pName .>>.? pContextInfo .>> spaces
+            let pLeading = pStorageClass .>>. pName .>>. pContextInfo .>> spaces
     
             let pField = pTypeAnnotation .>> pKeywordSemicolon .>> spaces |>> (fun t -> Field(t))
             let pMethodSig = pMethodSignature
@@ -546,10 +546,8 @@ module Parser =
             let pMethod = pMethodSig .>>. pMethodTrail .>> spaces |>> (fun ((x,y),z) -> PFieldOrMethod.Method(x,y,z))
 
             let pEither = pField <|> pMethod
-            pLeading .>>. pEither |>> fun (((s, n),ctx),fm) ->
-                match s with
-                | Some s' -> PMember.FieldOrMethod(s', ctx, n, fm)
-                | _ -> PMember.FieldOrMethod(Instance, ctx, n, fm)
+            pLeading .>>. pEither |>> (fun (((s, n),ctx),fm) ->
+                PMember.FieldOrMethod(s, ctx, n, fm)) <?> "field or method"
         let pa = pAccessModifier [pKeywordInternal;pKeywordPrivate;pKeywordProtected;pKeywordPublic]
         let p = pa .>>. (pConstructor <|> pFieldOrMethod)
         p |>> (fun (modifier, x) ->
@@ -617,7 +615,8 @@ module Parser =
         let result = run pCompilationUnit str
         parseHandler result
     let parseFile file encoding =
-        let result = runParserOnFile pCompilationUnit () file encoding
+        use fileStream = new System.IO.FileStream(file, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read);
+        let result = runParserOnStream pCompilationUnit () file fileStream encoding
         parseHandler result
     let parseStream stream encoding filename =
         let result = runParserOnStream pCompilationUnit () filename stream encoding
