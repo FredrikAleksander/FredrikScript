@@ -13,7 +13,7 @@ module Ast =
         member this.Column = column
 
         override this.ToString () =
-            sprintf "%s: Line %i, Column %i" this.StreamName this.Line this.Column
+            sprintf "%s (TID %i): Line %i, Column %i" this.StreamName this.Index this.Line this.Column
 
     type Name = Name of string
     type TypeName = 
@@ -26,7 +26,7 @@ module Ast =
         |Static
         |Extern of string
 
-    type CompilationUnit = CompilationUnit of UsingDirective list * TopLevelDeclaration list
+    type CompilationUnit = CompilationUnit of ContextInfo * UsingDirective list * TopLevelDeclaration list
     and UsingDirective = UsingDirective of ContextInfo * string
     and TopLevelDeclaration =
         | Type of ContextInfo * Type

@@ -1,0 +1,10 @@
+﻿namespace std {
+	class IoService {
+		read() : int { return 0; }
+	}
+	class Program {
+		public main() {
+			read();
+		}
+	}
+}

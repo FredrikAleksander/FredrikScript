@@ -14,13 +14,19 @@ let test p input =
 
 [<EntryPoint>]
 let main argv = 
-    //test pTypeName "namespace"
-    //test pIdentifier "namespace"
-    //test pExpression "100L"
-    //test pInheritance ": object"
-    test pCompilationUnit "enum TestClass { SomeId = 0 }"
+    test pCompilationUnit """namespace std {
+	class IoService {
+		read() { return 0; }
+	}
+	class Program {
+		public main() {
+			read();
+		}
+	}
+}"""
     test pCompilationUnit "internal enum SeekDirection { Set, Cur, End }"
     test pCodeBlock """{
+    read();
     new int[][0];
     new FileStream("data.dat");
     for(var i : int = 0; i < 10; i++) {

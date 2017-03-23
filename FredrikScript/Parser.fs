@@ -346,10 +346,6 @@ module Parser =
     ///#region Operators
     type Assoc = Associativity
     let opp = new OperatorPrecedenceParser<Expression, ContextInfo, _>()       
-    let adjustPosition offset (pos: Position) =
-        Position(pos.StreamName, pos.Index + int64 offset,
-             pos.Line, pos.Column + int64 offset)
-
     let pContextWs = pContextInfo .>> spaces
 
     opp.AddOperator(PostfixOperator("++", pContextWs, 16, true,(), fun c x -> PostfixIncrement(c,x)))
@@ -608,5 +604,21 @@ module Parser =
         spaces >>. many pTopLevelDeclaration .>> spaces
 
     let pCompilationUnit : Parser<CompilationUnit> =
-        pUsingDirectives .>>. pTopLevelDeclarations .>> eof |>> CompilationUnit
+        pContextInfo .>>. pUsingDirectives .>>. pTopLevelDeclarations .>> eof |>> fun ((x,y),z) -> CompilationUnit (x,y,z)
     ///#endregion Compilation Unit
+
+
+    let private parseHandler result =
+        match result with
+        | Success (r, _, _) -> r
+        | Failure (err, _, _) -> failwith err
+
+    let parseString str =
+        let result = run pCompilationUnit str
+        parseHandler result
+    let parseFile file encoding =
+        let result = runParserOnFile pCompilationUnit () file encoding
+        parseHandler result
+    let parseStream stream encoding filename =
+        let result = runParserOnStream pCompilationUnit () filename stream encoding
+        parseHandler result
