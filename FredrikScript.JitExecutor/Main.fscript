@@ -1,0 +1,10 @@
+﻿class object {
+}
+
+namespace std {
+	class Program {
+		public static main() : int {
+			return 666;
+		}
+	}
+}

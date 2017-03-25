@@ -1,5 +1,0 @@
-﻿namespace std {
-	class IoService {
-		public read() : int { return 0; }
-	}
-}

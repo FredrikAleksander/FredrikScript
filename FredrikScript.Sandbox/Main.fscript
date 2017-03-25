@@ -1,7 +1,0 @@
-﻿namespace std {
-	class Program {
-		public main() {
-			read();
-		}
-	}
-}
