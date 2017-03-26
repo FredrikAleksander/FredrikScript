@@ -4,6 +4,8 @@
     {
         public BinaryExpression(Context context, SourceInformation sourceInformation, Expression leftValue, Expression rightValue) : base(context, sourceInformation)
         {
+            LeftValue = leftValue;
+            RightValue = rightValue;
         }
 
         public Expression LeftValue { get; }

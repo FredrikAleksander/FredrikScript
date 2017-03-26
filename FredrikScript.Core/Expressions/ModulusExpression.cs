@@ -23,6 +23,6 @@ namespace FredrikScript.Core.Expressions
                 throw new Exception($"Type '{type.FullyQualifiedName}' cannot be used in a modulus expression");
         }
 
-        public override IType ExpressionType => LeftValue?.ExpressionType??RightValue?.ExpressionType??throw new Exception("Invalid modulus expression");
+        public override IType ExpressionType => LeftValue.ExpressionType;
     }
 }

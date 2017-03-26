@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.26228.9
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FredrikScript.Sandbox", "FredrikScript.Sandbox\FredrikScript.Sandbox.csproj", "{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FredrikScript.Core", "FredrikScript.Core\FredrikScript.Core.csproj", "{0B9F3522-C64B-4C41-8787-608740CF6072}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FredrikScript.LLVMCodeGen", "FredrikScript.LLVMCodeGen\FredrikScript.LLVMCodeGen.csproj", "{E8C6155B-BA54-4306-B19F-421DF373BA93}"
@@ -25,18 +23,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Debug|x64.ActiveCfg = Debug|x64
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Debug|x64.Build.0 = Debug|x64
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Debug|x86.ActiveCfg = Debug|x86
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Debug|x86.Build.0 = Debug|x86
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Release|Any CPU.Build.0 = Release|Any CPU
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Release|x64.ActiveCfg = Release|x64
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Release|x64.Build.0 = Release|x64
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Release|x86.ActiveCfg = Release|x86
-		{09C88E5E-EE17-45C4-A110-D6DE0A4FA2CC}.Release|x86.Build.0 = Release|x86
 		{0B9F3522-C64B-4C41-8787-608740CF6072}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{0B9F3522-C64B-4C41-8787-608740CF6072}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0B9F3522-C64B-4C41-8787-608740CF6072}.Debug|x64.ActiveCfg = Debug|Any CPU

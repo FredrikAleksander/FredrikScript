@@ -26,6 +26,6 @@ namespace FredrikScript.Core.Expressions
                 throw new Exception($"Type '{type.FullyQualifiedName}' cannot be used in a add expression");
         }
 
-        public override IType ExpressionType => LeftValue?.ExpressionType??RightValue?.ExpressionType??throw new Exception("Invalid add expression");
+        public override IType ExpressionType => LeftValue.ExpressionType;
     }
 }

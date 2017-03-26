@@ -3,8 +3,9 @@
 
 namespace std {
 	class Program {
-		public static main() : int {
-			return 666;
+		public static main(x : int) : int {
+			var y = x + 100;
+			return (1330 >> 1) + 1 + x * y;
 		}
 	}
 }

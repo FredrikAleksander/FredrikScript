@@ -77,7 +77,7 @@ namespace FredrikScript.Parser
             var declaringType = _context.Types[declaringTypeFqn];
             var returnType = ResolveType(method.Item6);
             var parameterTypes = method.Item5.Select(x => ResolveType(x.Item3)).ToArray();
-            var parameterNames = parameterTypes.Select(x => x.Name).ToArray();
+            var parameterNames = method.Item5.Select(x => x.Item2.Item).ToArray();
             var parameterNamesMangled = string.Join(",", parameterTypes.Select(parameterType => parameterType.FullyQualifiedName));
             var visibility = VisibilityFromAst(method.Item2);
             var storageClass = StorageClassFromAst(method.Item3);

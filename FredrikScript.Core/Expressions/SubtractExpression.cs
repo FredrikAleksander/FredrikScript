@@ -25,6 +25,6 @@ namespace FredrikScript.Core.Expressions
                 throw new Exception($"Type '{type.FullyQualifiedName}' cannot be used in a subtract expression");
         }
 
-        public override IType ExpressionType => LeftValue?.ExpressionType??RightValue?.ExpressionType??throw new Exception("Invalid substract expression");
+        public override IType ExpressionType => LeftValue.ExpressionType;
     }
 }

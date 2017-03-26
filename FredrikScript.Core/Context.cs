@@ -49,7 +49,7 @@ namespace FredrikScript.Core
                 var structBuilder = type.Value as StructBuilder;
                 if (classBuilder != null)
                 {
-                    foreach(var method in classBuilder.Methods.Where(x => x.StorageClass == StorageClass.Static && x.Visibility == Visibility.Public && x.ReturnType == Types["int"] && x.ParameterTypes.Length == 0))
+                    foreach(var method in classBuilder.Methods.Where(x => x.StorageClass == StorageClass.Static && x.Visibility == Visibility.Public && x.ReturnType == Types["int"] && x.ParameterTypes.Length == 1 && x.ParameterTypes[0].FullyQualifiedName == "int"))
                     {
                         if (method.Name == "main")
                             return method;

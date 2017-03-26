@@ -13,7 +13,7 @@ namespace FredrikScript.JitExecutor
     class Program
     {
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate int MainFunction();
+        public delegate int MainFunction(int x);
 
         static void Main(string[] args)
         {
@@ -38,7 +38,7 @@ namespace FredrikScript.JitExecutor
             LLVM.CreateMCJITCompilerForModule(out engine, (context.ModuleBuilder as LLVMModuleBuilder).LLVMModule, out options, optionsSize, out error);
 
             var entryPoint = (MainFunction)Marshal.GetDelegateForFunctionPointer(LLVM.GetPointerToGlobal(engine, context.GetEntryPointLLVM()), typeof(MainFunction));
-            int result = entryPoint();
+            int result = entryPoint(100);
 
             Console.WriteLine("Exit Code: " + result);
 
